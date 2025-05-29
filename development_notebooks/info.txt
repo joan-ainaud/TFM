@@ -1,0 +1,1 @@
+This folder contains notebooks where the main concepts are developed. The definitive code is then implemented in a modular manner elsewhere to be used more compactly for actual results.
