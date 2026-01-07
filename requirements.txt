@@ -1,5 +1,7 @@
-numpy
-scipy
-qibo
-qibojit
-qibochem
+numpy == 1.26.4
+matplotlib == 3.10.1
+scipy == 1.15.2
+qibo == 0.2.16
+qibojit == 0.1.7
+qibochem == 0.0.4
+tqdm == 4.67.1
