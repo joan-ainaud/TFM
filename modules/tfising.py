@@ -10,8 +10,8 @@ import numpy as np
 
 from execution import evaluate, parameter_shift
 
-ROUTING = True
-IGNORE_QUBIT_3 = True
+ROUTING = False
+IGNORE_QUBIT_3 = False
 NOISY = True
 bsc_parameters = {
     "t1": {"0": 24.44*1e-06, "1": 32.10*1e-06, "2": 25.60*1e-06, "3": 23.89*1e-06, "4": 15.48*1e-06},
@@ -83,6 +83,9 @@ def circs_shots_noisy_jac(N, p, g = 1, custom_operator=None, nshots=100, noise_m
         hamiltonian = hamiltonianTFI(N, g)
     else:
         hamiltonian = custom_operator
+
+    global NOISY
+    NOISY = noise
 
 
     if IGNORE_QUBIT_3: 

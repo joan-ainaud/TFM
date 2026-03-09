@@ -8,9 +8,10 @@ from qiskit.providers.fake_provider import GenericBackendV2
 import numpy as np
 import rustworkx as rx
  
+import matplotlib.pyplot as plt
 from qiskit.providers import BackendV2, Options
 from qiskit.transpiler import Target, InstructionProperties
-from qiskit.circuit.library import XGate, SXGate, RZGate, CZGate, RXGate, UGate, U2Gate
+from qiskit.circuit.library import XGate, SXGate, RZGate, CZGate, RXGate, UGate, U3Gate
 from qiskit.circuit import Measure, Delay, Parameter, Reset, Gate
 from qiskit import QuantumCircuit, transpile
 from qiskit.visualization import plot_gate_map
@@ -64,6 +65,9 @@ qc2.append(DRAGGate(theta, -lamb+np.pi/2), [0])
 qc2.append(RZGate(phi+lamb), [0])
 SessionEquivalenceLibrary.add_equivalence(UGate(theta,phi,lamb), qc2)
 
+
+# QBLUE RUNCARD AT: /gpfs/apps/QUANTUM/CALIBRATION/qblue/qblue.yml
+# LOCAL COPY AT testing/CALIBRATIONS/qblue/qblue.yml
 class FakeQBlueBackend(BackendV2):
     """Fake Backend imitating BSC's 5 qubit Quantum Blue chip (as of 15/01/2026) https://www.bsc.es/supportkc/docs/Quantum/overview
     Based in example from: https://quantum.cloud.ibm.com/docs/en/guides/custom-backend"""
@@ -96,10 +100,9 @@ class FakeQBlueBackend(BackendV2):
             - If True : uses U = RzRyRz gate instead of DRAG gate. To transpile, then, custom transpiler pass needed"""
         super().__init__(name="Fake QBlue backend")
         # Create a heavy-hex graph using the rustworkx library, then instantiate a new target
-        topology = [[0,1], [1,2], [2,3], [2,4]]
         self._graph = rustworkx.PyGraph()
         for q in range(5): self._graph.add_node(q)
-        for connection in topology: self._graph.add_edge(connection[0], connection[1], None)  # could use *connection to unravel, but is less readable
+        for connection in self.topology: self._graph.add_edge(connection[0], connection[1], None)  # could use *connection to unravel, but is less readable
         num_qubits = 5
         self._target = Target(
             "Fake QBlue backend", num_qubits=num_qubits
@@ -116,8 +119,10 @@ class FakeQBlueBackend(BackendV2):
         # Add 1q gates
         for i in range(num_qubits):
             qarg = (i,)
+            # TODO: Can't implement 1 qubit gate error, as transpilation then sometimes produces pairs of 1q gates, but should be 1
+            NOT_IMPLEMENTED = 0
             drag_props[qarg] = InstructionProperties(
-                error=float(FakeQBlueBackend.calibs_dict["1Q Gate"][i]),
+                error=float(FakeQBlueBackend.calibs_dict["1Q Gate"][i])*NOT_IMPLEMENTED,
                 duration=FakeQBlueBackend.DRAG_duration[i],
             )
             measure_props[qarg] = InstructionProperties(
@@ -126,17 +131,23 @@ class FakeQBlueBackend(BackendV2):
             )  # duration ??
             delay_props[qarg] = None
 
-        if manual: self._target.add_instruction(RXGate(Parameter("theta")),drag_props)
-        else: self._target.add_instruction(DRAGGate(Parameter("theta"), Parameter("phi")), drag_props)
-        self._target.add_instruction(RZGate(Parameter("lambda")), drag_props)
+        # TODO : Make the automatic transpiler work. RX are converted to Drag, and RY too, but when both appear in the circuit it breaks.
+        if manual: self._target.add_instruction(U3Gate(Parameter("theta"), Parameter("phi"), Parameter("lambda")),drag_props)
+        else: 
+            self._target.add_instruction(DRAGGate(Parameter("theta"), Parameter("phi")), drag_props)
+            self._target.add_instruction(RZGate(Parameter("lambda")), drag_props) # dangerous, don't need it
         self._target.add_instruction(Measure(), measure_props)
         self._target.add_instruction(Reset(), measure_props)
         self._target.add_instruction(Delay(Parameter("t")), delay_props)
 
         # Add chip local 2q gate which is CZ
         cz_props = {}
-        for i in range(len(topology)):
-            cz_props[tuple(topology[i])] = InstructionProperties(
+        for i in range(len(self.topology)):
+            cz_props[(self.topology[i][0], self.topology[i][1])] = InstructionProperties(
+                error=FakeQBlueBackend.CZ_DURATION[i],
+                duration=FakeQBlueBackend.CZ_ERROR[i],
+            )
+            cz_props[(self.topology[i][1], self.topology[i][0])] = InstructionProperties(
                 error=FakeQBlueBackend.CZ_DURATION[i],
                 duration=FakeQBlueBackend.CZ_ERROR[i],
             )
@@ -163,26 +174,55 @@ class FakeQBlueBackend(BackendV2):
             "This backend does not contain a run method"
         )
 
-TEST = False
-qc = QuantumCircuit(3)
-# qc.rx(0.2, 0)
-# qc.rx(0.2, 1)
-# qc.rx(0.2, 2)
-qc.cz(0,1)
-qc.cz(1,2)
-qc.cz(2,0)
-# qc.rx(0.2, 0)
-# qc.rx(0.2, 1)
-# qc.rx(0.2, 2)
-# qc.append(drag(Parameter("theta"),Parameter("phi")), [1])
+if __name__ == "__main__":
+    import qibo
+    from qiskit import qasm2
+    from tfising import circs_shots_noisy_jac
+    MANUAL = True
+    qc = QuantumCircuit(3)
+    qc.rx(0.2, 0)
+    qc.rx(0.2, 1)
+    qc.rz(0.2, 2)
+    qc.cz(0,1)
+    qc.cz(1,2)
+    qc.cz(2,0)
+    qc.rx(0.2, 0)
+    qc.ry(0.2, 1)
+    qc.rx(0.2, 2)
+    #qc.append(drag(Parameter("theta"),Parameter("phi")), [1])
 
-"""qiskit.compiler.transpile(qc, basis_gates=['cz, rx rz'])"""
+    """qiskit.compiler.transpile(qc, basis_gates=['cz, rx rz'])"""
 
-print(qc.draw())
+    circinv, circnoinv, *other = circs_shots_noisy_jac(N=5, p=1, noise=False)
+    qc = qasm2.loads(circinv.to_qasm())
 
-qblue = FakeQBlueBackend(manual=TEST)
 
-#qiskit.compiler.transpile(qc, target=qblue.target)
-pm = generate_preset_pass_manager(optimization_level=3, backend=qblue)
-transpiled_qc = pm.run(qc)
-print(transpiled_qc)
+    print(qc.draw())
+
+    qblue = FakeQBlueBackend(manual=MANUAL)
+
+    # print(qblue.graph)
+    # rustworkx.visualization.mpl_draw(qblue.graph)
+    # plt.show()
+
+    #qiskit.compiler.transpile(qc, target=qblue.target)
+    pm = generate_preset_pass_manager(optimization_level=3, backend=qblue)
+    transpiled_qc = pm.run(qc)
+    print(transpiled_qc)
+
+    print(" Transpiling with transpile() ")
+    print(transpile(qc,basis_gates=['u3', 'cz'], coupling_map=FakeQBlueBackend.topology))
+
+
+
+    cqibo = qibo.Circuit.from_qasm(qasm2.dumps(transpiled_qc))
+
+    cqibo.draw()
+
+    """# THE EFFECT OF TRANSPILATION WAS TO CHANGE CONNECTIONS:
+    1-2,  3-4   -->   2-3,   1-4
+    Was changed to:
+    1-2,  4-3   -->  swap 2-4   and  1-4,  2-3"""
+
+    
+

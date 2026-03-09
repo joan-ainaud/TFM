@@ -9,7 +9,7 @@ from optimizers import optimizer_gds
 from functools import partial
 import numpy as np
 
-from qibochem.measurement.result import expectation_from_samples
+from qibochem_local.measurement.result import expectation_from_samples
 
 import matplotlib.pyplot as plt
 

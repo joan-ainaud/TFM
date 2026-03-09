@@ -1,1 +1,5 @@
 testing/
+.vscode
+.*
+!.gitignore
+__pycache__
